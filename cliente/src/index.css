@@ -1,0 +1,79 @@
+:root {
+  /* Identidad Agro Santa Fé */
+  --agro-magenta: #CF006D;
+  --agro-green: #006B13;
+  --agro-green-dark: #004D0A;
+  --agro-green-light: #2F7242;
+
+  /* Fondos */
+  --background: #FFFFFF;
+  --background-soft: #FAEEF5;
+  --background-green-soft: #F1F7F2;
+
+  /* UI */
+  --card: #FFFFFF;
+  --border: #DDE4DE;
+
+  /* Texto */
+  --text: #1F2922;
+  --text-secondary: #647067;
+
+  /* Estados */
+  --success: #006B13;
+  --warning: #E6A700;
+  --danger: #D9364F;
+  --info: #3B82A6;
+}
+
+body {
+  background-color: var(--background-soft);
+  color: var(--text);
+  font-family: system-ui, -apple-system, sans-serif;
+  margin: 0;
+  padding: 0;
+}
+
+/* Clases personalizadas Agro Santa Fé */
+.asf-card {
+  background-color: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
+.asf-header {
+  border-bottom: 2px solid var(--border);
+}
+
+.asf-btn-primary {
+  background-color: var(--agro-green);
+  border-color: var(--agro-green);
+  color: #FFFFFF;
+}
+
+.asf-btn-primary:hover {
+  background-color: var(--agro-green-dark);
+  border-color: var(--agro-green-dark);
+  color: #FFFFFF;
+}
+
+.asf-badge-magenta {
+  background-color: var(--agro-magenta);
+  color: #FFFFFF;
+}
+
+.asf-badge-green {
+  background-color: var(--background-green-soft);
+  color: var(--agro-green);
+  border: 1px solid var(--agro-green-light);
+}
+
+.asf-badge-danger {
+  background-color: #FDF2F4;
+  color: var(--danger);
+  border: 1px solid var(--danger);
+}
+
+.asf-table-header {
+  background-color: var(--background-green-soft);
+  color: var(--agro-green-dark);
+}
