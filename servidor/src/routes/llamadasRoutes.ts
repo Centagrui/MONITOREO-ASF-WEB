@@ -3,7 +3,7 @@ import { pool } from '../config/db';
 
 const router = Router();
 
-// Función auxiliar para formatear la fecha a formato SQL válido
+// Función auxiliar: formatea la fecha respetando la hora LOCAL (no UTC)
 function normalizarFechaMySQL(raw: any): string {
   let date: Date;
 
@@ -13,17 +13,27 @@ function normalizarFechaMySQL(raw: any): string {
     // Si viene como timestamp en milisegundos desde Android (ej. 1788301167632)
     date = new Date(Number(raw));
   } else {
-    // Si viene como string ISO o texto
+    // Si viene como string
     date = new Date(raw);
   }
 
-  // Si la conversión falla, asignar fecha actual
+  // Si la conversión falla, usar la fecha y hora actual
   if (isNaN(date.getTime())) {
     date = new Date();
   }
 
-  // Formato: YYYY-MM-DD HH:MM:SS
-  return date.toISOString().slice(0, 19).replace('T', ' ');
+  const pad = (n: number) => n.toString().padStart(2, '0');
+
+  // Obtenemos los componentes locales (sin desfase UTC)
+  const year = date.getFullYear();
+  const month = pad(date.getMonth() + 1);
+  const day = pad(date.getDate());
+  const hours = pad(date.getHours());
+  const minutes = pad(date.getMinutes());
+  const seconds = pad(date.getSeconds());
+
+  // Formato estándar para DATETIME en MySQL: YYYY-MM-DD HH:mm:ss
+  return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
 }
 
 // GET /api/llamadas -> Consulta para el Dashboard
@@ -38,7 +48,7 @@ router.get('/', async (_req: Request, res: Response) => {
 });
 
 // POST /api/llamadas -> Recibe eventos desde Android
-router.post('/', async (req: Request, res: Response) => {
+router.post('/', async (req: Request, res: Response): Promise<any> => {
   console.log('>>> [POST /api/llamadas] Body recibido:', JSON.stringify(req.body, null, 2));
 
   // Soporte para camelCase y snake_case
@@ -49,7 +59,7 @@ router.post('/', async (req: Request, res: Response) => {
   const estado = req.body.estadoLlamada || req.body.estado || req.body.estado_llamada || null;
   const dispositivo = req.body.idDispositivo || req.body.id_dispositivo || req.body.dispositivo || 'DESCONOCIDO';
 
-  // Fecha normalizada lista para MySQL
+  // Fecha calculada con la hora local exacta
   const fechaSQL = normalizarFechaMySQL(req.body.fechaHora || req.body.fecha_hora);
 
   if (!numero || !tipo) {
@@ -74,7 +84,7 @@ router.post('/', async (req: Request, res: Response) => {
       dispositivo
     ]);
 
-    console.log('>>> Guardado exitoso en MySQL con ID:', (result as any).insertId);
+    console.log(`>>> Guardado exitoso en MySQL con ID: ${(result as any).insertId} | Fecha registrada: ${fechaSQL}`);
 
     return res.status(201).json({
       success: true,

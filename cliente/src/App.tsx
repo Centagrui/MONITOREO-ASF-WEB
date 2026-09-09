@@ -1,13 +1,258 @@
+import React, { useState, useEffect, useMemo } from 'react';
 import axios from 'axios';
 import * as XLSX from 'xlsx';
-import React, { useState, useEffect } from 'react';
-import { Llamada } from './types/llamada';
+import { LoginAdmin } from './LoginAdmin';
+import {
+  useReactTable,
+  getCoreRowModel,
+  getSortedRowModel,
+  getPaginationRowModel,
+  flexRender,
+  createColumnHelper,
+  SortingState
+} from '@tanstack/react-table';
+
+// Modelo de datos de llamadas
+export interface Llamada {
+  id: number;
+  nombre_contacto: string | null;
+  numero_telefono: string;
+  tipo_llamada: string;
+  estado_llamada: string;
+  duracion_segundos: number;
+  fecha_hora: string;
+  id_dispositivo: string;
+}
+
+interface TablaProps {
+  llamadas: Llamada[];
+  cargando: boolean;
+  formatearFecha: (fecha: string | number | null | undefined) => string;
+  formatearDuracion: (segundos: number) => string;
+}
+
+const columnHelper = createColumnHelper<Llamada>();
+
+export const TablaLlamadasTanStack: React.FC<TablaProps> = ({
+  llamadas,
+  cargando,
+  formatearFecha,
+  formatearDuracion
+}) => {
+  const [sorting, setSorting] = useState<SortingState>([
+    { id: 'fecha_hora', desc: true } // Orden descendente por defecto
+  ]);
+
+  const columns = useMemo(
+    () => [
+      columnHelper.accessor('nombre_contacto', {
+        id: 'contacto_telefono',
+        header: 'Contacto / Teléfono',
+        cell: (info) => (
+          <div className="py-1">
+            <div className="fw-semibold" style={{ color: 'var(--text)' }}>
+              {info.row.original.nombre_contacto || 'Desconocido'}
+            </div>
+            <div className="small" style={{ color: 'var(--text-secondary)' }}>
+              {info.row.original.numero_telefono}
+            </div>
+          </div>
+        )
+      }),
+      columnHelper.accessor('tipo_llamada', {
+        header: 'Tipo',
+        cell: (info) =>
+          info.getValue() === 'SALIENTE' ? (
+            <span className="badge asf-badge-magenta">
+              <i className="bi bi-telephone-outbound me-1"></i> SALIENTE
+            </span>
+          ) : (
+            <span className="badge bg-secondary">
+              {info.getValue()}
+            </span>
+          )
+      }),
+      columnHelper.accessor('estado_llamada', {
+        header: 'Estado',
+        cell: (info) => (
+          <span
+            className={`badge ${
+              info.getValue() === 'CONTESTADA' ? 'asf-badge-green' : 'asf-badge-danger'
+            }`}
+          >
+            {info.getValue()}
+          </span>
+        )
+      }),
+      columnHelper.accessor('duracion_segundos', {
+        header: 'Duración',
+        cell: (info) => (
+          <span className="font-monospace small" style={{ color: 'var(--text)' }}>
+            {formatearDuracion(info.getValue())}
+          </span>
+        )
+      }),
+      columnHelper.accessor('fecha_hora', {
+        header: 'Fecha y Hora',
+        cell: (info) => (
+          <span className="small" style={{ color: 'var(--text-secondary)' }}>
+            {formatearFecha(info.getValue())}
+          </span>
+        )
+      }),
+      columnHelper.accessor('id_dispositivo', {
+        header: 'Dispositivo',
+        cell: (info) => (
+          <span className="badge bg-light text-dark border" style={{ borderColor: 'var(--border)' }}>
+            <i className="bi bi-phone me-1" style={{ color: 'var(--agro-green)' }}></i>
+            {info.getValue() || 'N/A'}
+          </span>
+        )
+      })
+    ],
+    [formatearFecha, formatearDuracion]
+  );
+
+  const table = useReactTable({
+    data: llamadas,
+    columns,
+    state: { sorting },
+    onSortingChange: setSorting,
+    getCoreRowModel: getCoreRowModel(),
+    getSortedRowModel: getSortedRowModel(),
+    getPaginationRowModel: getPaginationRowModel(),
+    initialState: {
+      pagination: {
+        pageSize: 10
+      }
+    }
+  });
+
+  return (
+    <div className="asf-card shadow-sm overflow-hidden">
+      <div className="table-responsive">
+        <table className="table table-hover align-middle mb-0">
+          <thead className="asf-table-header text-uppercase small">
+            {table.getHeaderGroups().map((headerGroup) => (
+              <tr key={headerGroup.id}>
+                {headerGroup.headers.map((header) => {
+                  const puedeOrdenar = header.column.getCanSort();
+                  const orden = header.column.getIsSorted();
+
+                  return (
+                    <th
+                      key={header.id}
+                      scope="col"
+                      onClick={header.column.getToggleSortingHandler()}
+                      style={{ cursor: puedeOrdenar ? 'pointer' : 'default', userSelect: 'none' }}
+                      className="py-3 px-4"
+                    >
+                      <div className="d-flex align-items-center gap-2">
+                        {flexRender(header.column.columnDef.header, header.getContext())}
+                        {puedeOrdenar && (
+                          <span className="small opacity-75">
+                            {orden === 'asc' ? '▲' : orden === 'desc' ? '▼' : '⇅'}
+                          </span>
+                        )}
+                      </div>
+                    </th>
+                  );
+                })}
+              </tr>
+            ))}
+          </thead>
+          <tbody>
+            {table.getRowModel().rows.length > 0 ? (
+              table.getRowModel().rows.map((row) => (
+                <tr key={row.id}>
+                  {row.getVisibleCells().map((cell) => (
+                    <td key={cell.id} className="py-3 px-4">
+                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                    </td>
+                  ))}
+                </tr>
+              ))
+            ) : (
+              <tr>
+                <td colSpan={columns.length} className="text-center py-5" style={{ color: 'var(--text-secondary)' }}>
+                  {cargando ? 'Cargando llamadas...' : 'No hay llamadas registradas para este periodo.'}
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Barra de Paginación */}
+      <div className="d-flex flex-wrap align-items-center justify-content-between p-3 border-top gap-2">
+        <div className="d-flex align-items-center gap-2">
+          <span className="small text-muted">
+            Página <strong>{table.getState().pagination.pageIndex + 1}</strong> de{' '}
+            <strong>{table.getPageCount() || 1}</strong> ({llamadas.length} llamadas en total)
+          </span>
+          <select
+            className="form-select form-select-sm w-auto"
+            value={table.getState().pagination.pageSize}
+            onChange={(e) => table.setPageSize(Number(e.target.value))}
+          >
+            {[10, 20, 50, 100].map((size) => (
+              <option key={size} value={size}>
+                Mostrar {size}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="btn-group">
+          <button
+            className="btn btn-outline-secondary btn-sm"
+            onClick={() => table.setPageIndex(0)}
+            disabled={!table.getCanPreviousPage()}
+          >
+            « Primero
+          </button>
+          <button
+            className="btn btn-outline-secondary btn-sm"
+            onClick={() => table.previousPage()}
+            disabled={!table.getCanPreviousPage()}
+          >
+            ‹ Anterior
+          </button>
+          <button
+            className="btn btn-outline-secondary btn-sm"
+            onClick={() => table.nextPage()}
+            disabled={!table.getCanNextPage()}
+          >
+            Siguiente ›
+          </button>
+          <button
+            className="btn btn-outline-secondary btn-sm"
+            onClick={() => table.setPageIndex(table.getPageCount() - 1)}
+            disabled={!table.getCanNextPage()}
+          >
+            Último »
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
 
 const API_URL = 'http://localhost:3000/api/llamadas';
 
-type FiltroFecha = 'TODAS' | 'HOY' | '7_DIAS' | 'ESTE_MES' | 'PERSONALIZADA';
+type FiltroFecha = 'TODAS' | 'HOY' | 'ESTE_MES' | 'PERSONALIZADA';
 
 export default function App() {
+  // 1. Manejo de autenticación de administrador
+  const [adminAutenticado, setAdminAutenticado] = useState<string | null>(() => {
+    return sessionStorage.getItem('admin_sesion');
+  });
+
+  const cerrarSesion = () => {
+    sessionStorage.removeItem('admin_sesion');
+    setAdminAutenticado(null);
+  };
+
   const [llamadas, setLlamadas] = useState<Llamada[]>([]);
   const [cargando, setCargando] = useState<boolean>(true);
   const [filtroTexto, setFiltroTexto] = useState<string>('');
@@ -33,38 +278,41 @@ export default function App() {
   };
 
   useEffect(() => {
-    cargarLlamadas();
-    const intervalo = setInterval(cargarLlamadas, 10000);
-    return () => clearInterval(intervalo);
-  }, []);
+    if (adminAutenticado) {
+      cargarLlamadas();
+      const intervalo = setInterval(cargarLlamadas, 10000);
+      return () => clearInterval(intervalo);
+    }
+  }, [adminAutenticado]);
 
-  // Formatear duración de segundos a texto m/s
   const formatearDuracion = (segundos: number) => {
     const mins = Math.floor(segundos / 60);
     const segs = segundos % 60;
     return `${mins}m ${segs}s`;
   };
 
-  // Parsear y formatear fechas con seguridad
-  const formatearFecha = (raw: string | number | null | undefined): string => {
-    if (!raw) return 'Sin fecha';
-    const d = !isNaN(Number(raw)) && typeof raw !== 'boolean'
-      ? new Date(Number(raw))
-      : new Date(raw);
-    if (isNaN(d.getTime())) return 'Sin fecha';
+ const formatearFecha = (raw: string | number | null | undefined): string => {
+  if (!raw) return 'Sin fecha';
 
-    return d.toLocaleString('es-MX', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-      hour12: true
-    });
-  };
+  // Si viene como string de MySQL "2026-09-02 15:30:00"
+  let fechaStr = String(raw).replace(' ', 'T');
+  
+  // Si no tiene zona horaria definida, evitamos desfases tratándola directamente
+  const d = new Date(fechaStr);
+  if (isNaN(d.getTime())) return String(raw);
 
-  // Convertir fecha de la llamada a YYYY-MM-DD local
+  return d.toLocaleString('es-MX', {
+    timeZone: 'America/Mexico_City',
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: true
+  });
+};
+
   const obtenerFechaStrLocal = (fecha: Date): string => {
     const year = fecha.getFullYear();
     const month = String(fecha.getMonth() + 1).padStart(2, '0');
@@ -72,41 +320,36 @@ export default function App() {
     return `${year}-${month}-${day}`;
   };
 
-  // Lógica de filtrado en tabla
-  const coincideConFiltroFecha = (rawFecha: string | number) => {
-    if (filtroFecha === 'TODAS') return true;
+const coincideConFiltroFecha = (rawFecha: string | number) => {
+  if (filtroFecha === 'TODAS') return true;
 
-    const fechaLlamada = !isNaN(Number(rawFecha)) && typeof rawFecha !== 'boolean'
-      ? new Date(Number(rawFecha))
-      : new Date(rawFecha);
+  // Asegurar formato ISO compatible con todos los navegadores
+  const fechaSegura = typeof rawFecha === 'string' ? rawFecha.replace(' ', 'T') : rawFecha;
+  const fechaLlamada = new Date(fechaSegura);
 
-    if (isNaN(fechaLlamada.getTime())) return false;
+  if (isNaN(fechaLlamada.getTime())) return false;
 
-    const hoy = new Date();
-    const inicioHoy = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate());
-    const finHoy = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate(), 23, 59, 59, 999);
+  const hoy = new Date();
+  const inicioHoy = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate());
+  const finHoy = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate(), 23, 59, 59, 999);
 
-    switch (filtroFecha) {
-      case 'HOY':
-        return fechaLlamada >= inicioHoy && fechaLlamada <= finHoy;
-      case '7_DIAS': {
-        const hace7Dias = new Date(inicioHoy);
-        hace7Dias.setDate(hace7Dias.getDate() - 7);
-        return fechaLlamada >= hace7Dias && fechaLlamada <= finHoy;
-      }
-      case 'ESTE_MES': {
-        const inicioMes = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
-        const finMes = new Date(hoy.getFullYear(), hoy.getMonth() + 1, 0, 23, 59, 59, 999);
-        return fechaLlamada >= inicioMes && fechaLlamada <= finMes;
-      }
-      case 'PERSONALIZADA': {
-        if (!fechaEspecifica) return true;
-        return obtenerFechaStrLocal(fechaLlamada) === fechaEspecifica;
-      }
-      default:
-        return true;
+  switch (filtroFecha) {
+    case 'HOY':
+      return fechaLlamada >= inicioHoy && fechaLlamada <= finHoy;
+
+    case 'ESTE_MES': {
+      const inicioMes = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
+      const finMes = new Date(hoy.getFullYear(), hoy.getMonth() + 1, 0, 23, 59, 59, 999);
+      return fechaLlamada >= inicioMes && fechaLlamada <= finMes;
     }
-  };
+    case 'PERSONALIZADA': {
+      if (!fechaEspecifica) return true;
+      return obtenerFechaStrLocal(fechaLlamada) === fechaEspecifica;
+    }
+    default:
+      return true;
+  }
+};
 
   const llamadasFiltradas = llamadas.filter((ll) => {
     const coincideTexto =
@@ -174,26 +417,43 @@ export default function App() {
     setMostrarModalDescarga(false);
   };
 
+  // 2. Si no ha iniciado sesión, mostrar exclusivamente el Login
+  if (!adminAutenticado) {
+    return <LoginAdmin onLoginExitoso={(admin) => setAdminAutenticado(admin)} />;
+  }
+
+  // 3. Si está autenticado, renderizar Dashboard
   return (
     <div className="container py-4">
-      {/* Encabezado con solo botón de Descarga */}
+      {/* Encabezado */}
       <header className="d-flex flex-column flex-md-row justify-content-between align-items-md-center pb-3 mb-4 asf-header">
         <div>
           <h1 className="h3 fw-bold mb-1" style={{ color: 'var(--agro-green-dark)' }}>
             Monitoreo de Llamadas <span style={{ color: 'var(--agro-magenta)' }}>ASF</span>
           </h1>
           <p className="small mb-0" style={{ color: 'var(--text-secondary)' }}>
-            Panel de control y registro operativo
+            Panel de control | Administrador: <strong>{adminAutenticado}</strong>
           </p>
         </div>
-        
-        <button
-          onClick={() => setMostrarModalDescarga(true)}
-          className="btn asf-btn-primary d-inline-flex align-items-center gap-2 mt-3 mt-md-0 shadow-sm"
-        >
-          <i className="bi bi-file-earmark-excel"></i>
-          Descargar Reporte Excel
-        </button>
+
+        <div className="d-flex align-items-center gap-2 mt-3 mt-md-0">
+          <button
+            onClick={() => setMostrarModalDescarga(true)}
+            className="btn asf-btn-primary d-inline-flex align-items-center gap-2 shadow-sm"
+          >
+            <i className="bi bi-file-earmark-excel"></i>
+            Descargar Reporte Excel
+          </button>
+
+          <button
+            onClick={cerrarSesion}
+            className="btn btn-outline-danger d-inline-flex align-items-center gap-1 shadow-sm"
+            title="Cerrar sesión"
+          >
+            <i className="bi bi-box-arrow-right"></i>
+            Salir
+          </button>
+        </div>
       </header>
 
       {/* Tarjetas de Métricas */}
@@ -243,7 +503,7 @@ export default function App() {
         </div>
       </div>
 
-      {/* Filtros: Búsqueda y Fecha en Vivo */}
+      {/* Filtros */}
       <div className="asf-card p-3 mb-4 shadow-sm">
         <div className="row g-3 align-items-center">
           <div className="col-12 col-lg-4">
@@ -277,13 +537,6 @@ export default function App() {
                 className={`btn btn-sm ${filtroFecha === 'HOY' ? 'asf-btn-primary' : 'btn-outline-secondary'}`}
               >
                 Hoy
-              </button>
-              <button
-                type="button"
-                onClick={() => setFiltroFecha('7_DIAS')}
-                className={`btn btn-sm ${filtroFecha === '7_DIAS' ? 'asf-btn-primary' : 'btn-outline-secondary'}`}
-              >
-                7 días
               </button>
               <button
                 type="button"
@@ -332,73 +585,13 @@ export default function App() {
         </div>
       </div>
 
-      {/* Tabla de Registros */}
-      <div className="asf-card shadow-sm overflow-hidden">
-        <div className="table-responsive">
-          <table className="table table-hover align-middle mb-0">
-            <thead className="asf-table-header text-uppercase small">
-              <tr>
-                <th scope="col" className="py-3 px-4">Contacto / Teléfono</th>
-                <th scope="col" className="py-3 px-4">Tipo</th>
-                <th scope="col" className="py-3 px-4">Estado</th>
-                <th scope="col" className="py-3 px-4">Duración</th>
-                <th scope="col" className="py-3 px-4">Fecha y Hora</th>
-                <th scope="col" className="py-3 px-4">Dispositivo</th>
-              </tr>
-            </thead>
-            <tbody>
-              {llamadasFiltradas.length === 0 ? (
-                <tr>
-                  <td colSpan={6} className="text-center py-5" style={{ color: 'var(--text-secondary)' }}>
-                    {cargando ? 'Cargando llamadas...' : 'No hay llamadas registradas para este periodo.'}
-                  </td>
-                </tr>
-              ) : (
-                llamadasFiltradas.map((ll) => (
-                  <tr key={ll.id}>
-                    <td className="py-3 px-4">
-                      <div className="fw-semibold" style={{ color: 'var(--text)' }}>
-                        {ll.nombre_contacto || 'Desconocido'}
-                      </div>
-                      <div className="small" style={{ color: 'var(--text-secondary)' }}>
-                        {ll.numero_telefono}
-                      </div>
-                    </td>
-                    <td className="py-3 px-4">
-                      {ll.tipo_llamada === 'SALIENTE' && (
-                        <span className="badge asf-badge-magenta">
-                          <i className="bi bi-telephone-outbound me-1"></i> SALIENTE
-                        </span>
-                      )}
-                    </td>
-                    <td className="py-3 px-4">
-                      <span
-                        className={`badge ${
-                          ll.estado_llamada === 'CONTESTADA' ? 'asf-badge-green' : 'asf-badge-danger'
-                        }`}
-                      >
-                        {ll.estado_llamada}
-                      </span>
-                    </td>
-                    <td className="py-3 px-4 font-monospace small" style={{ color: 'var(--text)' }}>
-                      {formatearDuracion(ll.duracion_segundos)}
-                    </td>
-                    <td className="py-3 px-4 small" style={{ color: 'var(--text-secondary)' }}>
-                      {formatearFecha(ll.fecha_hora)}
-                    </td>
-                    <td className="py-3 px-4">
-                      <span className="badge bg-light text-dark border" style={{ borderColor: 'var(--border)' }}>
-                        <i className="bi bi-phone me-1" style={{ color: 'var(--agro-green)' }}></i>
-                        {ll.id_dispositivo || 'N/A'}
-                      </span>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
+      {/* Componente TanStack Table */}
+      <TablaLlamadasTanStack
+        llamadas={llamadasFiltradas}
+        cargando={cargando}
+        formatearFecha={formatearFecha}
+        formatearDuracion={formatearDuracion}
+      />
 
       {/* Modal para Descarga de Excel */}
       {mostrarModalDescarga && (
