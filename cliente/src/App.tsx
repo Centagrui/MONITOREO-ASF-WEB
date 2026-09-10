@@ -431,9 +431,6 @@ const coincideConFiltroFecha = (rawFecha: string | number) => {
           <h1 className="h3 fw-bold mb-1" style={{ color: 'var(--agro-green-dark)' }}>
             Monitoreo de Llamadas <span style={{ color: 'var(--agro-magenta)' }}>ASF</span>
           </h1>
-          <p className="small mb-0" style={{ color: 'var(--text-secondary)' }}>
-            Panel de control | Administrador: <strong>{adminAutenticado}</strong>
-          </p>
         </div>
 
         <div className="d-flex align-items-center gap-2 mt-3 mt-md-0">
