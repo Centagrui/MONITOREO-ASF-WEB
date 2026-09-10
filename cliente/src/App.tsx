@@ -101,10 +101,10 @@ export const TablaLlamadasTanStack: React.FC<TablaProps> = ({
         )
       }),
       columnHelper.accessor('id_dispositivo', {
-        header: 'Dispositivo',
+        header: 'Dispositivo / Ingeniero',
         cell: (info) => (
           <span className="badge bg-light text-dark border" style={{ borderColor: 'var(--border)' }}>
-            <i className="bi bi-phone me-1" style={{ color: 'var(--agro-green)' }}></i>
+            <i className="bi bi-person-badge me-1" style={{ color: 'var(--agro-green)' }}></i>
             {info.getValue() || 'N/A'}
           </span>
         )
@@ -175,7 +175,7 @@ export const TablaLlamadasTanStack: React.FC<TablaProps> = ({
             ) : (
               <tr>
                 <td colSpan={columns.length} className="text-center py-5" style={{ color: 'var(--text-secondary)' }}>
-                  {cargando ? 'Cargando llamadas...' : 'No hay llamadas registradas para este periodo.'}
+                  {cargando ? 'Cargando llamadas...' : 'No hay llamadas registradas para este periodo o usuario seleccionado.'}
                 </td>
               </tr>
             )}
@@ -238,12 +238,11 @@ export const TablaLlamadasTanStack: React.FC<TablaProps> = ({
   );
 };
 
-const API_URL = 'http://localhost:3000/api/llamadas';
-
+const API_URL = `http://${window.location.hostname}:3000/api/llamadas`;
 type FiltroFecha = 'TODAS' | 'HOY' | 'ESTE_MES' | 'PERSONALIZADA';
 
 export default function App() {
-  // 1. Manejo de autenticación de administrador
+  // Manejo de sesión
   const [adminAutenticado, setAdminAutenticado] = useState<string | null>(() => {
     return sessionStorage.getItem('admin_sesion');
   });
@@ -255,11 +254,13 @@ export default function App() {
 
   const [llamadas, setLlamadas] = useState<Llamada[]>([]);
   const [cargando, setCargando] = useState<boolean>(true);
-  const [filtroTexto, setFiltroTexto] = useState<string>('');
+
+  // Filtros: Usuario/Ingeniero y Fechas
+  const [usuarioSeleccionado, setUsuarioSeleccionado] = useState<string>('');
   const [filtroFecha, setFiltroFecha] = useState<FiltroFecha>('TODAS');
   const [fechaEspecifica, setFechaEspecifica] = useState<string>('');
 
-  // Estados para el Modal de Descarga Excel
+  // Modal de descarga Excel
   const [mostrarModalDescarga, setMostrarModalDescarga] = useState<boolean>(false);
   const [modoDescarga, setModoDescarga] = useState<'dia' | 'rango'>('dia');
   const [fechaInicioModal, setFechaInicioModal] = useState<string>('');
@@ -285,33 +286,37 @@ export default function App() {
     }
   }, [adminAutenticado]);
 
+  // Obtener lista única y ordenada de ingenieros registrados
+  const listaIngenieros = useMemo(() => {
+    const nombres = llamadas
+      .map((ll) => (ll.id_dispositivo || '').trim())
+      .filter((nombre) => nombre.length > 0);
+    return Array.from(new Set(nombres)).sort();
+  }, [llamadas]);
+
   const formatearDuracion = (segundos: number) => {
     const mins = Math.floor(segundos / 60);
     const segs = segundos % 60;
     return `${mins}m ${segs}s`;
   };
 
- const formatearFecha = (raw: string | number | null | undefined): string => {
-  if (!raw) return 'Sin fecha';
+  const formatearFecha = (raw: string | number | null | undefined): string => {
+    if (!raw) return 'Sin fecha';
+    const fechaStr = String(raw).replace(' ', 'T');
+    const d = new Date(fechaStr);
+    if (isNaN(d.getTime())) return String(raw);
 
-  // Si viene como string de MySQL "2026-09-02 15:30:00"
-  let fechaStr = String(raw).replace(' ', 'T');
-  
-  // Si no tiene zona horaria definida, evitamos desfases tratándola directamente
-  const d = new Date(fechaStr);
-  if (isNaN(d.getTime())) return String(raw);
-
-  return d.toLocaleString('es-MX', {
-    timeZone: 'America/Mexico_City',
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hour12: true
-  });
-};
+    return d.toLocaleString('es-MX', {
+      timeZone: 'America/Mexico_City',
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: true
+    });
+  };
 
   const obtenerFechaStrLocal = (fecha: Date): string => {
     const year = fecha.getFullYear();
@@ -320,55 +325,53 @@ export default function App() {
     return `${year}-${month}-${day}`;
   };
 
-const coincideConFiltroFecha = (rawFecha: string | number) => {
-  if (filtroFecha === 'TODAS') return true;
+  const coincideConFiltroFecha = (rawFecha: string | number) => {
+    if (filtroFecha === 'TODAS') return true;
 
-  // Asegurar formato ISO compatible con todos los navegadores
-  const fechaSegura = typeof rawFecha === 'string' ? rawFecha.replace(' ', 'T') : rawFecha;
-  const fechaLlamada = new Date(fechaSegura);
+    const fechaSegura = typeof rawFecha === 'string' ? rawFecha.replace(' ', 'T') : rawFecha;
+    const fechaLlamada = new Date(fechaSegura);
+    if (isNaN(fechaLlamada.getTime())) return false;
 
-  if (isNaN(fechaLlamada.getTime())) return false;
+    const hoy = new Date();
+    const inicioHoy = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate());
+    const finHoy = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate(), 23, 59, 59, 999);
 
-  const hoy = new Date();
-  const inicioHoy = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate());
-  const finHoy = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate(), 23, 59, 59, 999);
+    switch (filtroFecha) {
+      case 'HOY':
+        return fechaLlamada >= inicioHoy && fechaLlamada <= finHoy;
 
-  switch (filtroFecha) {
-    case 'HOY':
-      return fechaLlamada >= inicioHoy && fechaLlamada <= finHoy;
+      case 'ESTE_MES': {
+        const inicioMes = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
+        const finMes = new Date(hoy.getFullYear(), hoy.getMonth() + 1, 0, 23, 59, 59, 999);
+        return fechaLlamada >= inicioMes && fechaLlamada <= finMes;
+      }
+      case 'PERSONALIZADA': {
+        if (!fechaEspecifica) return true;
+        return obtenerFechaStrLocal(fechaLlamada) === fechaEspecifica;
+      }
+      default:
+        return true;
+      }
+  };
 
-    case 'ESTE_MES': {
-      const inicioMes = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
-      const finMes = new Date(hoy.getFullYear(), hoy.getMonth() + 1, 0, 23, 59, 59, 999);
-      return fechaLlamada >= inicioMes && fechaLlamada <= finMes;
-    }
-    case 'PERSONALIZADA': {
-      if (!fechaEspecifica) return true;
-      return obtenerFechaStrLocal(fechaLlamada) === fechaEspecifica;
-    }
-    default:
-      return true;
-  }
-};
-
+  // Filtrado compuesto: Usuario/Ingeniero + Rango de Fechas
   const llamadasFiltradas = llamadas.filter((ll) => {
-    const coincideTexto =
-      (ll.numero_telefono && ll.numero_telefono.includes(filtroTexto)) ||
-      (ll.nombre_contacto && ll.nombre_contacto.toLowerCase().includes(filtroTexto.toLowerCase())) ||
-      (ll.id_dispositivo && ll.id_dispositivo.toLowerCase().includes(filtroTexto.toLowerCase()));
+    const coincideUsuario =
+      !usuarioSeleccionado ||
+      (ll.id_dispositivo && ll.id_dispositivo.toLowerCase() === usuarioSeleccionado.toLowerCase());
 
     const coincideFecha = coincideConFiltroFecha(ll.fecha_hora);
-    return coincideTexto && coincideFecha;
+    return coincideUsuario && coincideFecha;
   });
 
-  // KPIs
+  // KPIs dinámicos calculados según el usuario seleccionado y el rango de fecha
   const totalLlamadas = llamadasFiltradas.length;
   const salientes = llamadasFiltradas.filter((ll) => ll.tipo_llamada === 'SALIENTE').length;
   const contestadas = llamadasFiltradas.filter((ll) => ll.estado_llamada === 'CONTESTADA').length;
   const segundosTotales = llamadasFiltradas.reduce((acc, curr) => acc + (curr.duracion_segundos || 0), 0);
   const minutosTotales = Math.floor(segundosTotales / 60);
 
-  // Proceso de exportación a archivo Excel (.xlsx)
+  // Proceso de exportación a archivo Excel (.xlsx) respetando el usuario seleccionado
   const ejecutarDescargaExcel = () => {
     if (modoDescarga === 'dia' && !fechaInicioModal) {
       alert('Por favor selecciona una fecha');
@@ -380,6 +383,11 @@ const coincideConFiltroFecha = (rawFecha: string | number) => {
     }
 
     const datosExportar = llamadas.filter((ll) => {
+      // Filtrar por el usuario actual si hay uno seleccionado
+      if (usuarioSeleccionado && ll.id_dispositivo?.toLowerCase() !== usuarioSeleccionado.toLowerCase()) {
+        return false;
+      }
+
       const f = new Date(ll.fecha_hora);
       if (isNaN(f.getTime())) return false;
       const fechaLlamadaStr = obtenerFechaStrLocal(f);
@@ -392,7 +400,7 @@ const coincideConFiltroFecha = (rawFecha: string | number) => {
     });
 
     if (datosExportar.length === 0) {
-      alert('No se encontraron llamadas en el periodo seleccionado.');
+      alert('No se encontraron llamadas para los criterios y usuario seleccionado.');
       return;
     }
 
@@ -412,17 +420,16 @@ const coincideConFiltroFecha = (rawFecha: string | number) => {
     const libro = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(libro, hoja, 'Reporte Llamadas');
 
-    const sufijo = modoDescarga === 'dia' ? fechaInicioModal : `${fechaInicioModal}_al_${fechaFinModal}`;
-    XLSX.writeFile(libro, `Reporte_Llamadas_ASF_${sufijo}.xlsx`);
+    const usuarioSufijo = usuarioSeleccionado ? `_${usuarioSeleccionado.replace(/\s+/g, '_')}` : '_GENERAL';
+    const fechaSufijo = modoDescarga === 'dia' ? fechaInicioModal : `${fechaInicioModal}_al_${fechaFinModal}`;
+    XLSX.writeFile(libro, `Reporte_Llamadas${usuarioSufijo}_${fechaSufijo}.xlsx`);
     setMostrarModalDescarga(false);
   };
 
-  // 2. Si no ha iniciado sesión, mostrar exclusivamente el Login
   if (!adminAutenticado) {
     return <LoginAdmin onLoginExitoso={(admin) => setAdminAutenticado(admin)} />;
   }
 
-  // 3. Si está autenticado, renderizar Dashboard
   return (
     <div className="container py-4">
       {/* Encabezado */}
@@ -431,6 +438,11 @@ const coincideConFiltroFecha = (rawFecha: string | number) => {
           <h1 className="h3 fw-bold mb-1" style={{ color: 'var(--agro-green-dark)' }}>
             Monitoreo de Llamadas <span style={{ color: 'var(--agro-magenta)' }}>ASF</span>
           </h1>
+          <p className="text-muted small mb-0">
+            {usuarioSeleccionado
+              ? `Visualizando métricas de: ${usuarioSeleccionado}`
+              : 'Panel de control general (Todos los ingenieros)'}
+          </p>
         </div>
 
         <div className="d-flex align-items-center gap-2 mt-3 mt-md-0">
@@ -500,25 +512,42 @@ const coincideConFiltroFecha = (rawFecha: string | number) => {
         </div>
       </div>
 
-      {/* Filtros */}
+      {/* Filtros Principales */}
       <div className="asf-card p-3 mb-4 shadow-sm">
         <div className="row g-3 align-items-center">
+          {/* Selector de Ingeniero / Usuario */}
           <div className="col-12 col-lg-4">
             <div className="input-group">
               <span className="input-group-text bg-white" style={{ borderColor: 'var(--border)' }}>
-                <i className="bi bi-search" style={{ color: 'var(--text-secondary)' }}></i>
+                <i className="bi bi-person-fill" style={{ color: 'var(--agro-green)' }}></i>
               </span>
-              <input
-                type="text"
-                className="form-control"
-                style={{ borderColor: 'var(--border)', color: 'var(--text)' }}
-                placeholder="Buscar contacto, teléfono o dispositivo..."
-                value={filtroTexto}
-                onChange={(e) => setFiltroTexto(e.target.value)}
-              />
+              <select
+                className="form-select"
+                style={{ borderColor: 'var(--border)', color: 'var(--text)', fontWeight: 500 }}
+                value={usuarioSeleccionado}
+                onChange={(e) => setUsuarioSeleccionado(e.target.value)}
+              >
+                <option value="">👤 Todos los Ingenieros (General)</option>
+                {listaIngenieros.map((nombre) => (
+                  <option key={nombre} value={nombre}>
+                    {nombre}
+                  </option>
+                ))}
+              </select>
+              {usuarioSeleccionado && (
+                <button
+                  className="btn btn-outline-secondary"
+                  type="button"
+                  onClick={() => setUsuarioSeleccionado('')}
+                  title="Restablecer a general"
+                >
+                  <i className="bi bi-x-circle"></i>
+                </button>
+              )}
             </div>
           </div>
 
+          {/* Botones de Rango de Fecha */}
           <div className="col-12 col-md-8 col-lg-5">
             <div className="btn-group w-100" role="group">
               <button
@@ -545,6 +574,7 @@ const coincideConFiltroFecha = (rawFecha: string | number) => {
             </div>
           </div>
 
+          {/* Fecha Específica */}
           <div className="col-12 col-md-4 col-lg-3">
             <div className="input-group input-group-sm">
               <span className="input-group-text bg-white" style={{ borderColor: 'var(--border)' }}>
@@ -607,6 +637,13 @@ const coincideConFiltroFecha = (rawFecha: string | number) => {
               </div>
 
               <div className="modal-body">
+                {usuarioSeleccionado && (
+                  <div className="alert alert-light border py-2 px-3 mb-3 small">
+                    <i className="bi bi-info-circle text-primary me-2"></i>
+                    Exportando solo llamadas de: <strong>{usuarioSeleccionado}</strong>
+                  </div>
+                )}
+
                 <div className="btn-group w-100 mb-3" role="group">
                   <button
                     type="button"

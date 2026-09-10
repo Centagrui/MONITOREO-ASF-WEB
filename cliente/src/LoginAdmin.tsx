@@ -5,6 +5,9 @@ interface Props {
   onLoginExitoso: (adminName: string) => void;
 }
 
+// Detecta automáticamente la IP o dominio desde donde abriste la página en el navegador
+const BASE_URL = `http://${window.location.hostname}:3000/api/admin/login`;
+
 export const LoginAdmin: React.FC<Props> = ({ onLoginExitoso }) => {
   const [usuario, setUsuario] = useState('');
   const [password, setPassword] = useState('');
@@ -17,7 +20,7 @@ export const LoginAdmin: React.FC<Props> = ({ onLoginExitoso }) => {
     setCargando(true);
 
     try {
-      const res = await axios.post('http://localhost:3000/api/admin/login', {
+      const res = await axios.post(BASE_URL, {
         usuario,
         password
       });
@@ -25,7 +28,7 @@ export const LoginAdmin: React.FC<Props> = ({ onLoginExitoso }) => {
       sessionStorage.setItem('admin_sesion', res.data.admin);
       onLoginExitoso(res.data.admin);
     } catch (err: any) {
-      setError(err.response?.data?.error || 'Acceso no autorizado');
+      setError(err.response?.data?.error || 'Acceso no autorizado o problema de conexión');
     } finally {
       setCargando(false);
     }
@@ -64,7 +67,6 @@ export const LoginAdmin: React.FC<Props> = ({ onLoginExitoso }) => {
               className="form-control"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              placeholder="••••••••"
               required
             />
           </div>
