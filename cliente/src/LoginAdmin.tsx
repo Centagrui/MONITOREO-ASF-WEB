@@ -5,8 +5,7 @@ interface Props {
   onLoginExitoso: (adminName: string) => void;
 }
 
-// Detecta automáticamente la IP o dominio desde donde abriste la página en el navegador
-const BASE_URL = `http://${window.location.hostname}:3000/api/admin/login`;
+const BASE_URL = 'https://api2.agrosantafe.com.mx/api/admin/login';
 
 export const LoginAdmin: React.FC<Props> = ({ onLoginExitoso }) => {
   const [usuario, setUsuario] = useState('');

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import axios from 'axios';
 import * as XLSX from 'xlsx';
 import { LoginAdmin } from './LoginAdmin';
+import TelefonosRegistrados from './TelefonosRegistrados'; 
 import {
   useReactTable,
   getCoreRowModel,
@@ -24,6 +25,13 @@ export interface Llamada {
   id_dispositivo: string;
 }
 
+
+export const calcularEstadoReal = (duracion: number): string => {
+  if (duracion === 0) return 'NO CONTESTADA';
+  if (duracion > 0 && duracion <= 5) return 'POSIBLE BUZÓN DE VOZ';
+  return 'CONTESTADA';
+};
+
 interface TablaProps {
   llamadas: Llamada[];
   cargando: boolean;
@@ -40,7 +48,7 @@ export const TablaLlamadasTanStack: React.FC<TablaProps> = ({
   formatearDuracion
 }) => {
   const [sorting, setSorting] = useState<SortingState>([
-    { id: 'fecha_hora', desc: true } // Orden descendente por defecto
+    { id: 'fecha_hora', desc: true }
   ]);
 
   const columns = useMemo(
@@ -72,17 +80,24 @@ export const TablaLlamadasTanStack: React.FC<TablaProps> = ({
             </span>
           )
       }),
-      columnHelper.accessor('estado_llamada', {
+    
+      columnHelper.accessor('duracion_segundos', {
+        id: 'estado_llamada_calculado',
         header: 'Estado',
-        cell: (info) => (
-          <span
-            className={`badge ${
-              info.getValue() === 'CONTESTADA' ? 'asf-badge-green' : 'asf-badge-danger'
-            }`}
-          >
-            {info.getValue()}
-          </span>
-        )
+        cell: (info) => {
+          const duracion = info.getValue() || 0;
+          const estado = calcularEstadoReal(duracion);
+          
+          let claseCss = 'asf-badge-danger'; // Rojo
+          if (estado === 'CONTESTADA') claseCss = 'asf-badge-green'; // Verde
+          if (estado === 'POSIBLE BUZÓN DE VOZ') claseCss = 'bg-warning text-dark'; // Amarillo
+          
+          return (
+            <span className={`badge ${claseCss}`}>
+              {estado}
+            </span>
+          );
+        }
       }),
       columnHelper.accessor('duracion_segundos', {
         header: 'Duración',
@@ -238,11 +253,12 @@ export const TablaLlamadasTanStack: React.FC<TablaProps> = ({
   );
 };
 
-const API_URL = `http://${window.location.hostname}:3000/api/llamadas`;
+const API_URL = 'https://api2.agrosantafe.com.mx/api/llamadas';
 type FiltroFecha = 'TODAS' | 'HOY' | 'ESTE_MES' | 'PERSONALIZADA';
 
 export default function App() {
-  // Manejo de sesión
+  const [vistaActual, setVistaActual] = useState<'inicio' | 'usuarios'>('inicio');
+
   const [adminAutenticado, setAdminAutenticado] = useState<string | null>(() => {
     return sessionStorage.getItem('admin_sesion');
   });
@@ -255,12 +271,10 @@ export default function App() {
   const [llamadas, setLlamadas] = useState<Llamada[]>([]);
   const [cargando, setCargando] = useState<boolean>(true);
 
-  // Filtros: Usuario/Ingeniero y Fechas
   const [usuarioSeleccionado, setUsuarioSeleccionado] = useState<string>('');
   const [filtroFecha, setFiltroFecha] = useState<FiltroFecha>('TODAS');
   const [fechaEspecifica, setFechaEspecifica] = useState<string>('');
 
-  // Modal de descarga Excel
   const [mostrarModalDescarga, setMostrarModalDescarga] = useState<boolean>(false);
   const [modoDescarga, setModoDescarga] = useState<'dia' | 'rango'>('dia');
   const [fechaInicioModal, setFechaInicioModal] = useState<string>('');
@@ -286,7 +300,6 @@ export default function App() {
     }
   }, [adminAutenticado]);
 
-  // Obtener lista única y ordenada de ingenieros registrados
   const listaIngenieros = useMemo(() => {
     const nombres = llamadas
       .map((ll) => (ll.id_dispositivo || '').trim())
@@ -339,7 +352,6 @@ export default function App() {
     switch (filtroFecha) {
       case 'HOY':
         return fechaLlamada >= inicioHoy && fechaLlamada <= finHoy;
-
       case 'ESTE_MES': {
         const inicioMes = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
         const finMes = new Date(hoy.getFullYear(), hoy.getMonth() + 1, 0, 23, 59, 59, 999);
@@ -351,10 +363,9 @@ export default function App() {
       }
       default:
         return true;
-      }
+    }
   };
 
-  // Filtrado compuesto: Usuario/Ingeniero + Rango de Fechas
   const llamadasFiltradas = llamadas.filter((ll) => {
     const coincideUsuario =
       !usuarioSeleccionado ||
@@ -364,14 +375,14 @@ export default function App() {
     return coincideUsuario && coincideFecha;
   });
 
-  // KPIs dinámicos calculados según el usuario seleccionado y el rango de fecha
   const totalLlamadas = llamadasFiltradas.length;
   const salientes = llamadasFiltradas.filter((ll) => ll.tipo_llamada === 'SALIENTE').length;
-  const contestadas = llamadasFiltradas.filter((ll) => ll.estado_llamada === 'CONTESTADA').length;
+
+  const contestadas = llamadasFiltradas.filter((ll) => calcularEstadoReal(ll.duracion_segundos) === 'CONTESTADA').length;
+  
   const segundosTotales = llamadasFiltradas.reduce((acc, curr) => acc + (curr.duracion_segundos || 0), 0);
   const minutosTotales = Math.floor(segundosTotales / 60);
 
-  // Proceso de exportación a archivo Excel (.xlsx) respetando el usuario seleccionado
   const ejecutarDescargaExcel = () => {
     if (modoDescarga === 'dia' && !fechaInicioModal) {
       alert('Por favor selecciona una fecha');
@@ -383,7 +394,6 @@ export default function App() {
     }
 
     const datosExportar = llamadas.filter((ll) => {
-      // Filtrar por el usuario actual si hay uno seleccionado
       if (usuarioSeleccionado && ll.id_dispositivo?.toLowerCase() !== usuarioSeleccionado.toLowerCase()) {
         return false;
       }
@@ -409,7 +419,10 @@ export default function App() {
       'Contacto': item.nombre_contacto || 'Desconocido',
       'Número Telefónico': item.numero_telefono,
       'Tipo': item.tipo_llamada,
-      'Estado': item.estado_llamada,
+      // ==========================================
+      // 4. ACTUALIZAMOS EL EXCEL PARA QUE IMPRIMA EL ESTADO CALCULADO
+      // ==========================================
+      'Estado': calcularEstadoReal(item.duracion_segundos),
       'Duración': formatearDuracion(item.duracion_segundos),
       'Duración (Segundos)': item.duracion_segundos,
       'Fecha y Hora': formatearFecha(item.fecha_hora),
@@ -431,290 +444,320 @@ export default function App() {
   }
 
   return (
-    <div className="container py-4">
-      {/* Encabezado */}
-      <header className="d-flex flex-column flex-md-row justify-content-between align-items-md-center pb-3 mb-4 asf-header">
-        <div>
-          <h1 className="h3 fw-bold mb-1" style={{ color: 'var(--agro-green-dark)' }}>
-            Monitoreo de Llamadas <span style={{ color: 'var(--agro-magenta)' }}>ASF</span>
-          </h1>
-          <p className="text-muted small mb-0">
-            {usuarioSeleccionado
-              ? `Visualizando métricas de: ${usuarioSeleccionado}`
-              : 'Panel de control general (Todos los ingenieros)'}
-          </p>
-        </div>
+    <>
+      
+      {vistaActual === 'inicio' && (
+        <div className="container py-4">
+          {/* Encabezado */}
+          <header className="d-flex flex-column flex-md-row justify-content-between align-items-md-center pb-3 mb-4 asf-header">
+            <div>
+              <h1 className="h3 fw-bold mb-1" style={{ color: 'var(--agro-green-dark)' }}>
+                Monitoreo de Llamadas <span style={{ color: 'var(--agro-magenta)' }}>ASF</span>
+              </h1>
+              <p className="text-muted small mb-0">
+                {usuarioSeleccionado
+                  ? `Visualizando métricas de: ${usuarioSeleccionado}`
+                  : 'Panel de control general '}
+              </p>
+            </div>
 
-        <div className="d-flex align-items-center gap-2 mt-3 mt-md-0">
-          <button
-            onClick={() => setMostrarModalDescarga(true)}
-            className="btn asf-btn-primary d-inline-flex align-items-center gap-2 shadow-sm"
-          >
-            <i className="bi bi-file-earmark-excel"></i>
-            Descargar Reporte Excel
-          </button>
-
-          <button
-            onClick={cerrarSesion}
-            className="btn btn-outline-danger d-inline-flex align-items-center gap-1 shadow-sm"
-            title="Cerrar sesión"
-          >
-            <i className="bi bi-box-arrow-right"></i>
-            Salir
-          </button>
-        </div>
-      </header>
-
-      {/* Tarjetas de Métricas */}
-      <div className="row g-3 mb-4">
-        <div className="col-12 col-sm-6 col-lg-3">
-          <div className="asf-card h-100 shadow-sm p-3">
-            <span className="small text-uppercase fw-semibold" style={{ color: 'var(--text-secondary)' }}>
-              Total Llamadas
-            </span>
-            <h2 className="display-6 fw-bold mt-2 mb-0" style={{ color: 'var(--agro-green)' }}>
-              {totalLlamadas}
-            </h2>
-          </div>
-        </div>
-
-        <div className="col-12 col-sm-6 col-lg-3">
-          <div className="asf-card h-100 shadow-sm p-3">
-            <span className="small text-uppercase fw-semibold" style={{ color: 'var(--text-secondary)' }}>
-              Salientes
-            </span>
-            <h2 className="display-6 fw-bold mt-2 mb-0" style={{ color: 'var(--agro-magenta)' }}>
-              {salientes}
-            </h2>
-          </div>
-        </div>
-
-        <div className="col-12 col-sm-6 col-lg-3">
-          <div className="asf-card h-100 shadow-sm p-3">
-            <span className="small text-uppercase fw-semibold" style={{ color: 'var(--text-secondary)' }}>
-              Contestadas
-            </span>
-            <h2 className="display-6 fw-bold mt-2 mb-0" style={{ color: 'var(--agro-green)' }}>
-              {contestadas}
-            </h2>
-          </div>
-        </div>
-
-        <div className="col-12 col-sm-6 col-lg-3">
-          <div className="asf-card h-100 shadow-sm p-3">
-            <span className="small text-uppercase fw-semibold" style={{ color: 'var(--text-secondary)' }}>
-              Minutos Totales
-            </span>
-            <h2 className="display-6 fw-bold mt-2 mb-0" style={{ color: 'var(--agro-green-dark)' }}>
-              {minutosTotales} <span className="fs-6 fw-normal" style={{ color: 'var(--text-secondary)' }}>min</span>
-            </h2>
-          </div>
-        </div>
-      </div>
-
-      {/* Filtros Principales */}
-      <div className="asf-card p-3 mb-4 shadow-sm">
-        <div className="row g-3 align-items-center">
-          {/* Selector de Ingeniero / Usuario */}
-          <div className="col-12 col-lg-4">
-            <div className="input-group">
-              <span className="input-group-text bg-white" style={{ borderColor: 'var(--border)' }}>
-                <i className="bi bi-person-fill" style={{ color: 'var(--agro-green)' }}></i>
-              </span>
-              <select
-                className="form-select"
-                style={{ borderColor: 'var(--border)', color: 'var(--text)', fontWeight: 500 }}
-                value={usuarioSeleccionado}
-                onChange={(e) => setUsuarioSeleccionado(e.target.value)}
+            <div className="d-flex align-items-center gap-2 mt-3 mt-md-0">
+              
+              <button
+                onClick={() => setVistaActual('usuarios')}
+                className="btn d-inline-flex align-items-center gap-2 shadow-sm text-white"
+                style={{ backgroundColor: '#0b6623', borderColor: '#09541d' }}
               >
-                <option value="">👤 Todos los Ingenieros (General)</option>
-                {listaIngenieros.map((nombre) => (
-                  <option key={nombre} value={nombre}>
-                    {nombre}
-                  </option>
-                ))}
-              </select>
-              {usuarioSeleccionado && (
-                <button
-                  className="btn btn-outline-secondary"
-                  type="button"
-                  onClick={() => setUsuarioSeleccionado('')}
-                  title="Restablecer a general"
-                >
-                  <i className="bi bi-x-circle"></i>
-                </button>
-              )}
+                <i className="bi bi-people-fill"></i>
+                Directorio
+              </button>
+
+              <button
+                onClick={() => setMostrarModalDescarga(true)}
+                className="btn asf-btn-primary d-inline-flex align-items-center gap-2 shadow-sm"
+              >
+                <i className="bi bi-file-earmark-excel"></i>
+                Descargar Reporte Excel
+              </button>
+
+              <button
+                onClick={cerrarSesion}
+                className="btn btn-outline-danger d-inline-flex align-items-center gap-1 shadow-sm"
+                title="Cerrar sesión"
+              >
+                <i className="bi bi-box-arrow-right"></i>
+                Salir
+              </button>
+            </div>
+          </header>
+
+          {/* Tarjetas de Métricas */}
+          <div className="row g-3 mb-4">
+            <div className="col-12 col-sm-6 col-lg-3">
+              <div className="asf-card h-100 shadow-sm p-3">
+                <span className="small text-uppercase fw-semibold" style={{ color: 'var(--text-secondary)' }}>
+                  Total Llamadas
+                </span>
+                <h2 className="display-6 fw-bold mt-2 mb-0" style={{ color: 'var(--agro-green)' }}>
+                  {totalLlamadas}
+                </h2>
+              </div>
+            </div>
+
+            <div className="col-12 col-sm-6 col-lg-3">
+              <div className="asf-card h-100 shadow-sm p-3">
+                <span className="small text-uppercase fw-semibold" style={{ color: 'var(--text-secondary)' }}>
+                  Salientes
+                </span>
+                <h2 className="display-6 fw-bold mt-2 mb-0" style={{ color: 'var(--agro-magenta)' }}>
+                  {salientes}
+                </h2>
+              </div>
+            </div>
+
+            <div className="col-12 col-sm-6 col-lg-3">
+              <div className="asf-card h-100 shadow-sm p-3">
+                <span className="small text-uppercase fw-semibold" style={{ color: 'var(--text-secondary)' }}>
+                  Contestadas
+                </span>
+                <h2 className="display-6 fw-bold mt-2 mb-0" style={{ color: 'var(--agro-green)' }}>
+                  {contestadas}
+                </h2>
+              </div>
+            </div>
+
+            <div className="col-12 col-sm-6 col-lg-3">
+              <div className="asf-card h-100 shadow-sm p-3">
+                <span className="small text-uppercase fw-semibold" style={{ color: 'var(--text-secondary)' }}>
+                  Minutos Totales
+                </span>
+                <h2 className="display-6 fw-bold mt-2 mb-0" style={{ color: 'var(--agro-green-dark)' }}>
+                  {minutosTotales} <span className="fs-6 fw-normal" style={{ color: 'var(--text-secondary)' }}>min</span>
+                </h2>
+              </div>
             </div>
           </div>
 
-          {/* Botones de Rango de Fecha */}
-          <div className="col-12 col-md-8 col-lg-5">
-            <div className="btn-group w-100" role="group">
-              <button
-                type="button"
-                onClick={() => setFiltroFecha('TODAS')}
-                className={`btn btn-sm ${filtroFecha === 'TODAS' ? 'asf-btn-primary' : 'btn-outline-secondary'}`}
-              >
-                Todas
-              </button>
-              <button
-                type="button"
-                onClick={() => setFiltroFecha('HOY')}
-                className={`btn btn-sm ${filtroFecha === 'HOY' ? 'asf-btn-primary' : 'btn-outline-secondary'}`}
-              >
-                Hoy
-              </button>
-              <button
-                type="button"
-                onClick={() => setFiltroFecha('ESTE_MES')}
-                className={`btn btn-sm ${filtroFecha === 'ESTE_MES' ? 'asf-btn-primary' : 'btn-outline-secondary'}`}
-              >
-                Este Mes
-              </button>
-            </div>
-          </div>
-
-          {/* Fecha Específica */}
-          <div className="col-12 col-md-4 col-lg-3">
-            <div className="input-group input-group-sm">
-              <span className="input-group-text bg-white" style={{ borderColor: 'var(--border)' }}>
-                <i className="bi bi-calendar-event" style={{ color: 'var(--agro-green)' }}></i>
-              </span>
-              <input
-                type="date"
-                className="form-control"
-                style={{ borderColor: 'var(--border)' }}
-                value={fechaEspecifica}
-                onChange={(e) => {
-                  setFechaEspecifica(e.target.value);
-                  if (e.target.value) {
-                    setFiltroFecha('PERSONALIZADA');
-                  } else {
-                    setFiltroFecha('TODAS');
-                  }
-                }}
-              />
-              {fechaEspecifica && (
-                <button
-                  className="btn btn-outline-secondary"
-                  type="button"
-                  onClick={() => {
-                    setFechaEspecifica('');
-                    setFiltroFecha('TODAS');
-                  }}
-                  title="Limpiar fecha"
-                >
-                  <i className="bi bi-x"></i>
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Componente TanStack Table */}
-      <TablaLlamadasTanStack
-        llamadas={llamadasFiltradas}
-        cargando={cargando}
-        formatearFecha={formatearFecha}
-        formatearDuracion={formatearDuracion}
-      />
-
-      {/* Modal para Descarga de Excel */}
-      {mostrarModalDescarga && (
-        <div className="modal show d-block" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
-          <div className="modal-dialog modal-dialog-centered">
-            <div className="modal-content asf-card p-3">
-              <div className="modal-header border-0 pb-1">
-                <h5 className="modal-title fw-bold" style={{ color: 'var(--agro-green-dark)' }}>
-                  Exportar Llamadas a Excel
-                </h5>
-                <button
-                  type="button"
-                  className="btn-close"
-                  onClick={() => setMostrarModalDescarga(false)}
-                ></button>
+          {/* Filtros Principales */}
+          <div className="asf-card p-3 mb-4 shadow-sm">
+            <div className="row g-3 align-items-center">
+              {/* Selector de Ingeniero / Usuario */}
+              <div className="col-12 col-lg-4">
+                <div className="input-group">
+                  <span className="input-group-text bg-white" style={{ borderColor: 'var(--border)' }}>
+                    <i className="bi bi-person-fill" style={{ color: 'var(--agro-green)' }}></i>
+                  </span>
+                  <select
+                    className="form-select"
+                    style={{ borderColor: 'var(--border)', color: 'var(--text)', fontWeight: 500 }}
+                    value={usuarioSeleccionado}
+                    onChange={(e) => setUsuarioSeleccionado(e.target.value)}
+                  >
+                    <option value=""> Todos los usuarios</option>
+                    {listaIngenieros.map((nombre) => (
+                      <option key={nombre} value={nombre}>
+                        {nombre}
+                      </option>
+                    ))}
+                  </select>
+                  {usuarioSeleccionado && (
+                    <button
+                      className="btn btn-outline-secondary"
+                      type="button"
+                      onClick={() => setUsuarioSeleccionado('')}
+                      title="Restablecer a general"
+                    >
+                      <i className="bi bi-x-circle"></i>
+                    </button>
+                  )}
+                </div>
               </div>
 
-              <div className="modal-body">
-                {usuarioSeleccionado && (
-                  <div className="alert alert-light border py-2 px-3 mb-3 small">
-                    <i className="bi bi-info-circle text-primary me-2"></i>
-                    Exportando solo llamadas de: <strong>{usuarioSeleccionado}</strong>
-                  </div>
-                )}
-
-                <div className="btn-group w-100 mb-3" role="group">
+              {/* Botones de Rango de Fecha */}
+              <div className="col-12 col-md-8 col-lg-5">
+                <div className="btn-group w-100" role="group">
                   <button
                     type="button"
-                    className={`btn btn-sm ${modoDescarga === 'dia' ? 'asf-btn-primary' : 'btn-outline-secondary'}`}
-                    onClick={() => setModoDescarga('dia')}
+                    onClick={() => setFiltroFecha('TODAS')}
+                    className={`btn btn-sm ${filtroFecha === 'TODAS' ? 'asf-btn-primary' : 'btn-outline-secondary'}`}
                   >
-                    Por Día Específico
+                    Todas
                   </button>
                   <button
                     type="button"
-                    className={`btn btn-sm ${modoDescarga === 'rango' ? 'asf-btn-primary' : 'btn-outline-secondary'}`}
-                    onClick={() => setModoDescarga('rango')}
+                    onClick={() => setFiltroFecha('HOY')}
+                    className={`btn btn-sm ${filtroFecha === 'HOY' ? 'asf-btn-primary' : 'btn-outline-secondary'}`}
                   >
-                    Intervalo de Fechas
+                    Hoy
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setFiltroFecha('ESTE_MES')}
+                    className={`btn btn-sm ${filtroFecha === 'ESTE_MES' ? 'asf-btn-primary' : 'btn-outline-secondary'}`}
+                  >
+                    Este Mes
                   </button>
                 </div>
-
-                {modoDescarga === 'dia' ? (
-                  <div>
-                    <label className="form-label small fw-semibold">Selecciona la fecha:</label>
-                    <input
-                      type="date"
-                      className="form-control"
-                      value={fechaInicioModal}
-                      onChange={(e) => setFechaInicioModal(e.target.value)}
-                    />
-                  </div>
-                ) : (
-                  <div className="row g-2">
-                    <div className="col-6">
-                      <label className="form-label small fw-semibold">Desde:</label>
-                      <input
-                        type="date"
-                        className="form-control"
-                        value={fechaInicioModal}
-                        onChange={(e) => setFechaInicioModal(e.target.value)}
-                      />
-                    </div>
-                    <div className="col-6">
-                      <label className="form-label small fw-semibold">Hasta:</label>
-                      <input
-                        type="date"
-                        className="form-control"
-                        value={fechaFinModal}
-                        onChange={(e) => setFechaFinModal(e.target.value)}
-                      />
-                    </div>
-                  </div>
-                )}
               </div>
 
-              <div className="modal-footer border-0 pt-0">
-                <button
-                  type="button"
-                  className="btn btn-outline-secondary"
-                  onClick={() => setMostrarModalDescarga(false)}
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="button"
-                  className="btn asf-btn-primary"
-                  onClick={ejecutarDescargaExcel}
-                >
-                  Descargar .XLSX
-                </button>
+              {/* Fecha Específica */}
+              <div className="col-12 col-md-4 col-lg-3">
+                <div className="input-group input-group-sm">
+                  <span className="input-group-text bg-white" style={{ borderColor: 'var(--border)' }}>
+                    <i className="bi bi-calendar-event" style={{ color: 'var(--agro-green)' }}></i>
+                  </span>
+                  <input
+                    type="date"
+                    className="form-control"
+                    style={{ borderColor: 'var(--border)' }}
+                    value={fechaEspecifica}
+                    onChange={(e) => {
+                      setFechaEspecifica(e.target.value);
+                      if (e.target.value) {
+                        setFiltroFecha('PERSONALIZADA');
+                      } else {
+                        setFiltroFecha('TODAS');
+                      }
+                    }}
+                  />
+                  {fechaEspecifica && (
+                    <button
+                      className="btn btn-outline-secondary"
+                      type="button"
+                      onClick={() => {
+                        setFechaEspecifica('');
+                        setFiltroFecha('TODAS');
+                      }}
+                      title="Limpiar fecha"
+                    >
+                      <i className="bi bi-x"></i>
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
           </div>
+
+          {/* Componente TanStack Table */}
+          <TablaLlamadasTanStack
+            llamadas={llamadasFiltradas}
+            cargando={cargando}
+            formatearFecha={formatearFecha}
+            formatearDuracion={formatearDuracion}
+          />
+
+          {/* Modal para Descarga de Excel */}
+          {mostrarModalDescarga && (
+            <div className="modal show d-block" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
+              <div className="modal-dialog modal-dialog-centered">
+                <div className="modal-content asf-card p-3">
+                  <div className="modal-header border-0 pb-1">
+                    <h5 className="modal-title fw-bold" style={{ color: 'var(--agro-green-dark)' }}>
+                      Exportar Llamadas a Excel
+                    </h5>
+                    <button
+                      type="button"
+                      className="btn-close"
+                      onClick={() => setMostrarModalDescarga(false)}
+                    ></button>
+                  </div>
+
+                  <div className="modal-body">
+                    {usuarioSeleccionado && (
+                      <div className="alert alert-light border py-2 px-3 mb-3 small">
+                        <i className="bi bi-info-circle text-primary me-2"></i>
+                        Exportando solo llamadas de: <strong>{usuarioSeleccionado}</strong>
+                      </div>
+                    )}
+
+                    <div className="btn-group w-100 mb-3" role="group">
+                      <button
+                        type="button"
+                        className={`btn btn-sm ${modoDescarga === 'dia' ? 'asf-btn-primary' : 'btn-outline-secondary'}`}
+                        onClick={() => setModoDescarga('dia')}
+                      >
+                        Por Día Específico
+                      </button>
+                      <button
+                        type="button"
+                        className={`btn btn-sm ${modoDescarga === 'rango' ? 'asf-btn-primary' : 'btn-outline-secondary'}`}
+                        onClick={() => setModoDescarga('rango')}
+                      >
+                        Intervalo de Fechas
+                      </button>
+                    </div>
+
+                    {modoDescarga === 'dia' ? (
+                      <div>
+                        <label className="form-label small fw-semibold">Selecciona la fecha:</label>
+                        <input
+                          type="date"
+                          className="form-control"
+                          value={fechaInicioModal}
+                          onChange={(e) => setFechaInicioModal(e.target.value)}
+                        />
+                      </div>
+                    ) : (
+                      <div className="row g-2">
+                        <div className="col-6">
+                          <label className="form-label small fw-semibold">Desde:</label>
+                          <input
+                            type="date"
+                            className="form-control"
+                            value={fechaInicioModal}
+                            onChange={(e) => setFechaInicioModal(e.target.value)}
+                          />
+                        </div>
+                        <div className="col-6">
+                          <label className="form-label small fw-semibold">Hasta:</label>
+                          <input
+                            type="date"
+                            className="form-control"
+                            value={fechaFinModal}
+                            onChange={(e) => setFechaFinModal(e.target.value)}
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="modal-footer border-0 pt-0">
+                    <button
+                      type="button"
+                      className="btn btn-outline-secondary"
+                      onClick={() => setMostrarModalDescarga(false)}
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      type="button"
+                      className="btn asf-btn-primary"
+                      onClick={ejecutarDescargaExcel}
+                    >
+                      Descargar .XLSX
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       )}
-    </div>
+
+      {vistaActual === 'usuarios' && (
+        <div style={{ position: 'relative' }}>
+          <div style={{ position: 'absolute', top: '20px', left: '20px', zIndex: 10 }}>
+            <button 
+              className="btn btn-light shadow-sm border" 
+              onClick={() => setVistaActual('inicio')}
+            >
+              <i className="bi bi-arrow-left fw-bold me-2"></i> Regresar
+            </button>
+          </div>
+          
+          <TelefonosRegistrados />
+        </div>
+      )}
+    </>
   );
 }
