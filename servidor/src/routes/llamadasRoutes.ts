@@ -36,10 +36,21 @@ function normalizarFechaMySQL(raw: any): string {
   return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
 }
 
-// GET /api/llamadas -> Consulta para el Dashboard
+// GET /api/llamadas -> Consulta para el Dashboard (AQUÍ ESTÁ LA CORRECCIÓN)
 router.get('/', async (_req: Request, res: Response) => {
   try {
-    const [rows] = await pool.query('SELECT * FROM llamadas ORDER BY fecha_hora DESC');
+    // Usamos LEFT JOIN para buscar el "origen" en la tabla usuarios usando el nombre
+    // Usamos TRIM() para evitar que espacios en blanco rompan la relación
+    const query = `
+      SELECT 
+        l.*, 
+        u.origen 
+      FROM llamadas l
+      LEFT JOIN usuarios u ON TRIM(l.id_dispositivo) = TRIM(u.nombre)
+      ORDER BY l.fecha_hora DESC
+    `;
+    
+    const [rows] = await pool.query(query);
     res.json(rows);
   } catch (error: any) {
     console.error('Error al obtener llamadas:', error);
