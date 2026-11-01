@@ -794,12 +794,13 @@ export default function App() {
             </button>
           </div>
           
-          <Reportes 
+         <Reportes 
             llamadasRaw={llamadas.map(ll => ({
               usuario: ll.id_dispositivo || 'Desconocido',
               duracion: formatearDuracion(ll.duracion_segundos),
               destinatario: ll.nombre_contacto ? `${ll.nombre_contacto} (${ll.numero_telefono})` : ll.numero_telefono,
-              fecha: ll.fecha_hora
+              fecha: ll.fecha_hora,
+              origen: ll.origen || null
             }))} 
           />
         </div>
